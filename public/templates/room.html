@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Room</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    let socket;
+
+    window.onload = function () {
+      const roomID = "{{ .RoomID }}"; // Fetch from server-rendered template
+      socket = new WebSocket(`ws://localhost:8080/ws/${roomID}`);
+
+      socket.onopen = () => {
+        console.log(`Connected to room ${roomID}`);
+      };
+
+      socket.onmessage = (event) => {
+        const messageList = document.getElementById("message-list");
+        const newMessage = document.createElement("div");
+        newMessage.classList.add(
+          "bg-gray-200",
+          "text-black",
+          "p-3",
+          "rounded",
+          "mb-2",
+          "max-w-[80%]"
+        );
+        newMessage.textContent = event.data;
+        messageList.appendChild(newMessage);
+
+        messageList.scrollTop = messageList.scrollHeight;
+      };
+
+      socket.onerror = (error) => console.error("WebSocket error:", error);
+      socket.onclose = () => console.log("WebSocket connection closed.");
+    };
+
+    function sendMessage() {
+      const messageInput = document.getElementById("message-input");
+      const messageText = "{{.Username}}:  " + messageInput.value.trim();
+
+      if (messageText && socket.readyState === WebSocket.OPEN) {
+        socket.send(messageText);
+        const messageList = document.getElementById("message-list");
+        const newMessage = document.createElement("div");
+        newMessage.classList.add(
+          "bg-blue-500",
+          "text-white",
+          "p-3",
+          "rounded",
+          "mb-2",
+          "max-w-[80%]",
+          "ml-auto"
+        );
+        newMessage.textContent = messageText;
+        messageList.appendChild(newMessage);
+        messageList.scrollTop = messageList.scrollHeight;
+
+        messageInput.value = "";
+      }
+    }
+
+  </script>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col justify-between">
+
+  <!-- Chat Container -->
+  <div class="flex-1 flex flex-col justify-between p-4">
+
+    <!-- Chat Header -->
+    <div class="bg-blue-600 text-white p-4 flex justify-between items-center rounded-lg">
+      <h1 class="text-lg font-semibold">{{ .RoomName }}</h1>
+      <button class="bg-red-500 hover:bg-red-600 px-3 py-1 rounded">Logout</button>
+    </div>
+
+    <!-- Message List -->
+    <div id="message-list" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50 rounded-lg mb-4">
+      <!-- Dynamically render messages -->
+      {{ range .Messages }}
+        <div class="bg-gray-200 text-black p-3 rounded mb-2 max-w-[80%]">
+          {{ . }}
+        </div>
+      {{ end }}
+    </div>
+
+    <!-- Message Input and Send Button -->
+    <div class="flex items-center bg-gray-50 p-4 rounded-lg">
+      <input type="text" id="message-input" placeholder="Type a message..." class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      <button onclick="sendMessage()" class="ml-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">Send</button>
+    </div>
+  </div>
+
+</body>
+</html>
