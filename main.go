@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/gorilla/sessions"
 	"github.com/gorilla/websocket"
 	"go.mongodb.org/mongo-driver/bson"
@@ -18,7 +19,7 @@ var (
 	chatroomsCollection *mongo.Collection
 	usersCollection     *mongo.Collection
 	store               = sessions.NewCookieStore([]byte("secret-key"))
-	upgrader            = websocket.Upgrader{}
+	upgrader            = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 )
 
 type Chatroom struct {
@@ -48,22 +49,24 @@ func init() {
 	usersCollection = client.Database("chatdb").Collection("users")
 }
 
-func ChatroomPage(ctx *gin.Context) {
-
+func ChatroomPageGET(ctx *gin.Context) {
 	cursor, err := chatroomsCollection.Find(context.Background(), bson.D{})
 	if err != nil {
 		ctx.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
+
 	var chatrooms []Chatroom
 	if err := cursor.All(context.Background(), &chatrooms); err != nil {
 		ctx.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
+	// Get the logged-in username from session
 	session, _ := store.Get(ctx.Request, "chat-session")
 	username, ok := session.Values["username"].(string)
 
+	// Render the index page with the chatrooms list and user info
 	ctx.HTML(200, "index.html", gin.H{
 		"Chatrooms": chatrooms,
 		"Username":  username,
@@ -71,14 +74,29 @@ func ChatroomPage(ctx *gin.Context) {
 	})
 }
 
+func ChatroomPagePOST(ctx *gin.Context) {
+	roomName := ctx.PostForm("room-name")
+	roomID := uuid.New().String() // Example UUID-based room ID
+	room := Chatroom{
+		RoomID:   roomID,
+		RoomName: roomName,
+		Users:    []string{}, // Initially no users
+		Messages: []string{}, // Initially no messages
+	}
+	_, err := chatroomsCollection.InsertOne(context.Background(), room)
+	if err != nil {
+		ctx.JSON(500, gin.H{"error": "Failed to create room"})
+		return
+	}
+	ctx.Redirect(http.StatusFound, "/")
+}
+
 func DisplayRooms(ctx *gin.Context) {
 	roomid := ctx.Param("roomid")
 	session, _ := store.Get(ctx.Request, "chat-session")
 	username, _ := session.Values["username"].(string)
-
 	var room Chatroom
 	chatroomsCollection.FindOne(ctx, bson.M{"room_id": roomid}).Decode(&room)
-
 	ctx.HTML(200, "room.html", gin.H{"RoomName": room.RoomName, "RoomID": room.RoomID, "Username": username,
 		"Messages": room.Messages,
 	})
@@ -88,21 +106,17 @@ func WebsocketHandler(ctx *gin.Context) {
 	roomid := ctx.Param("roomid")
 	session, _ := store.Get(ctx.Request, "chat-session")
 	username, ok := session.Values["username"].(string)
-
 	if !ok {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "User not logged in"})
 		return
 	}
-
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
 		log.Println("WebSocket upgrade error:", err)
 		return
 	}
 	defer conn.Close()
-
 	log.Printf("User %s connected to room %s", username, roomid)
-
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
@@ -112,7 +126,7 @@ func WebsocketHandler(ctx *gin.Context) {
 		var chatroom Chatroom
 		chatroomsCollection.FindOne(ctx, bson.M{"room_id": roomid}).Decode(&chatroom)
 		chatroom.Messages = append(chatroom.Messages, string(message))
-		_, err = chatroomsCollection.UpdateOne(ctx, bson.M{"room_id": roomid}, bson.M{
+		chatroomsCollection.UpdateOne(ctx, bson.M{"room_id": roomid}, bson.M{
 			"$set": bson.M{"messages": chatroom.Messages},
 		})
 		log.Printf("[%s] %s: %s", roomid, username, message)
@@ -173,7 +187,8 @@ func main() {
 	r.Static("/static", "./public/static")
 	r.LoadHTMLGlob("public/templates/*.html")
 
-	r.GET("/", ChatroomPage)
+	r.GET("/", ChatroomPageGET)
+	r.POST("/", ChatroomPagePOST)
 	r.GET("/signup", RenderSignup)
 	r.POST("/signup", SignupBackend)
 	r.GET("/login", RenderLogin)
