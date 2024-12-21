@@ -36,7 +36,8 @@ type User struct {
 }
 
 func init() {
-	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
+	serverAPI := options.ServerAPI(options.ServerAPIVersion1)
+	clientOptions := options.Client().ApplyURI("mongodb+srv://ammar:t6FAcVnY3TZSONZU@cluster0.o2qwc.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0").SetServerAPIOptions(serverAPI)
 	client, err := mongo.Connect(context.Background(), clientOptions)
 	if err != nil {
 		log.Fatal(err)
@@ -130,7 +131,6 @@ func WebsocketHandler(ctx *gin.Context) {
 			"$set": bson.M{"messages": chatroom.Messages},
 		})
 		log.Printf("[%s] %s: %s", roomid, username, message)
-
 	}
 }
 
